@@ -29,18 +29,18 @@ A system aiming to predict and inform users of the inundation status, risk asses
 
 Sample risk report generated
 
-![App Screenshot](https://i.im.ge/2024/10/27/k8ovrF.Sample-Image-1.png)
+![Sample Image 1](https://github.com/user-attachments/assets/608781aa-1760-467c-816b-65f7eb03095f)
 Section 1
 
-![App Screenshot](https://i.im.ge/2024/10/27/k8oz6z.Sample-Image-2.png)
+![Sample Image 2](https://github.com/user-attachments/assets/ffabc7a9-4a04-42b6-9317-533da4a617b8)
 Section2
 
-![App Screenshot](https://i.im.ge/2024/10/27/k8okSS.Sample-Image-3.png)
+![Sample Image 3](https://github.com/user-attachments/assets/53731fd6-7162-47fc-9974-214319ab1997)
 Section 3
 
 
 Sample inundation map generated
-![App Screenshot](https://i.im.ge/2024/10/27/k8oHV6.Sample-Image-4.png)
+![Sample Image 4](https://github.com/user-attachments/assets/e55637e2-5287-4fa5-9031-e0c37ccb868b)
 
 
 ## Website
