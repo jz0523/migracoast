@@ -4,6 +4,11 @@
 A system aiming to predict and inform users of the inundation status, risk assessments, as well as relocation suggestions of their houses.
 
 
+## Website
+
+To use Migracoast, check its website [migracoast.com](https://www.migracoast.com/)
+
+
 ## Author
 
 - [@Zhiyang Zhong](https://www.linkedin.com/in/jimmy-zhong-517973242/)
@@ -41,9 +46,4 @@ Section 3
 
 Sample inundation map generated
 ![Sample Image 4](https://github.com/user-attachments/assets/e55637e2-5287-4fa5-9031-e0c37ccb868b)
-
-
-## Website
-
-To use Migracoast, check its website [migracoast.com](https://www.migracoast.com/)
 
