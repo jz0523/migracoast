@@ -13,7 +13,7 @@ STATES = ("MA", "NY", "PA", "FL", "CA")
 # FEMA rounds claim coordinates to one decimal place, which fixes the
 # spatial resolution of the whole project at 0.1 degrees.
 CELL_SIZE = 0.1
-CELL_HALF = 0.05
+CELL_HALF = CELL_SIZE / 2
 
 # Cross-validation groups cells into blocks this many degrees wide so that
 # a cell's neighbour can never land in the opposite fold.

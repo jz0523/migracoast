@@ -21,3 +21,31 @@ def test_directories_are_under_the_repository_root():
     assert config.RAW_DIR.parts[-2:] == ("data", "raw")
     assert config.PROCESSED_DIR.parts[-2:] == ("data", "processed")
     assert config.MODELS_DIR.name == "models"
+
+
+def test_ensure_dirs_creates_nested_directories_and_is_idempotent(tmp_path, monkeypatch):
+    raw_dir = tmp_path / "data" / "raw"
+    processed_dir = tmp_path / "data" / "processed"
+    models_dir = tmp_path / "models"
+
+    monkeypatch.setattr(config, "RAW_DIR", raw_dir)
+    monkeypatch.setattr(config, "PROCESSED_DIR", processed_dir)
+    monkeypatch.setattr(config, "MODELS_DIR", models_dir)
+
+    assert not raw_dir.exists()
+    assert not processed_dir.exists()
+    assert not models_dir.exists()
+
+    config.ensure_dirs()
+
+    assert raw_dir.is_dir()
+    assert processed_dir.is_dir()
+    assert models_dir.is_dir()
+
+    # Calling it again must not raise, even though the directories
+    # (including their nested parents) already exist.
+    config.ensure_dirs()
+
+    assert raw_dir.is_dir()
+    assert processed_dir.is_dir()
+    assert models_dir.is_dir()
