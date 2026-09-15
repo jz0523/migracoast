@@ -1,0 +1,23 @@
+SLR_TF U.S. Sea Level Projections
+filler line 2
+filler line 3
+filler line 4
+filler line 5
+filler line 6
+filler line 7
+filler line 8
+filler line 9
+filler line 10
+filler line 11
+filler line 12
+filler line 13
+filler line 14
+filler line 15
+filler line 16
+filler line 17
+PSMSL Site,PSMSL ID,NOAA ID,NOAA Name,RSL GridNum,Lat,Long,Regional Classification,US Coastline Intersect (1 = yes),Scenario,RSL contribution from VLM (trend: cm/year),Offset 1992 to 2000 (cm),Offset 2000 to 2005 (cm),RSL2005 (cm),RSL2020 (cm),RSL2030 (cm),RSL2040 (cm),RSL2050 (cm),RSL2060 (cm),RSL2070 (cm),RSL2080 (cm),RSL2090 (cm),RSL2100 (cm),RSL2110 (cm),RSL2120 (cm),RSL2130 (cm),RSL2140 (cm),RSL2150 (cm)
+GMSL,0,0,GMSL,,,,,1,1.0 - MED,0,2,2,0,6,10,14,19,24,30,36,42,48,55,61,67,74,80
+Boston,235,8443970,"Boston, MA",,42.4,-71.1,Northeast,1,1.0 - MED,0.1,2,3,0,10,16,22,30,38,47,56,66,76,86,96,106,116,126
+Boston,235,8443970,"Boston, MA",,42.4,-71.1,Northeast,1,1.0 - LOW,0.1,2,3,0,8,13,18,25,32,40,48,56,64,72,80,88,96,104
+Boston,235,8443970,"Boston, MA",,42.4,-71.1,Northeast,1,0.5 - MED,0.1,2,3,0,7,11,15,20,26,32,38,44,50,56,62,68,74,80
+Miami,520,8723170,"Miami, FL",,25.8,-80.2,Southeast,1,1.0 - MED,0.2,2,4,0,12,19,26,35,45,56,67,79,91,103,115,127,139,151
