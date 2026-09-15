@@ -73,16 +73,32 @@ class ElevationGrid:
         return cls(boxes)
 
     def window(self, lat: float, lon: float, half: float = CELL_HALF) -> np.ndarray:
-        """Return every pixel within `half` degrees of the point, across all boxes."""
-        collected = []
+        """Return each distinct pixel within `half` degrees of the point.
+
+        Padded state boxes overlap and all sample one global grid, so a pixel
+        can appear in several boxes with identical coordinates. Pixels are
+        deduplicated by coordinate so that overlap never over-weights part of
+        a window. Masked pixels are returned as NaN.
+        """
+        keys = []
+        values = []
         for lats, lons, z in self._boxes:
             rows = np.where((lats >= lat - half) & (lats <= lat + half))[0]
             cols = np.where((lons >= lon - half) & (lons <= lon + half))[0]
-            if rows.size and cols.size:
-                collected.append(np.ma.asarray(z[np.ix_(rows, cols)]).ravel())
-        if not collected:
+            if not (rows.size and cols.size):
+                continue
+            lat_grid, lon_grid = np.meshgrid(lats[rows], lons[cols], indexing="ij")
+            keys.append(
+                np.column_stack([np.round(lat_grid.ravel(), 6), np.round(lon_grid.ravel(), 6)])
+            )
+            block = np.ma.asarray(z[np.ix_(rows, cols)]).astype(float)
+            values.append(np.ma.filled(block, np.nan).ravel())
+        if not keys:
             return np.array([])
-        return np.ma.concatenate(collected)
+        keys = np.vstack(keys)
+        values = np.concatenate(values)
+        _, first = np.unique(keys, axis=0, return_index=True)
+        return values[np.sort(first)]
 
     def features(self, lat: float, lon: float, half: float = CELL_HALF) -> dict:
         return terrain_features(self.window(lat, lon, half))

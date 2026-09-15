@@ -60,6 +60,31 @@ def test_grid_returns_empty_outside_coverage(tmp_path):
     assert grid.window(10.0, 10.0, half=0.05).size == 0
 
 
+def test_overlapping_boxes_do_not_double_count_pixels():
+    """Padded state boxes overlap. Pixels shared by two boxes must count once."""
+    step = 1 / 120
+    lats = np.arange(41.0, 42.0, step) + step / 2
+    lons = np.arange(-72.0, -70.0, step) + step / 2
+    # Elevation rises with longitude, so over-weighting any strip biases the mean.
+    z_full = np.tile(np.linspace(1.0, 50.0, lons.size), (lats.size, 1))
+
+    def cut(lon_lo, lon_hi):
+        cols = np.where((lons >= lon_lo) & (lons <= lon_hi))[0]
+        return (lats.copy(), lons[cols].copy(), np.ma.asarray(z_full[:, cols]))
+
+    box_a = cut(-72.0, -70.95)   # eastern edge at about -70.95
+    box_b = cut(-71.3, -70.0)    # fully covers the query window
+
+    merged = ElevationGrid([cut(-72.0, -70.0)])
+    overlapping = ElevationGrid([box_a, box_b])
+
+    query = (41.5, -71.0)        # window spans -71.05 to -70.95, straddling box A's edge
+    assert overlapping.window(*query, half=0.05).size == merged.window(*query, half=0.05).size
+    assert overlapping.features(*query, half=0.05) == pytest.approx(
+        merged.features(*query, half=0.05), nan_ok=True
+    )
+
+
 def _synthetic_grid(tmp_path):
     """Write a small NetCDF covering 41.5-42.5 N, 71.5-70.5 W and load it."""
     import netCDF4
