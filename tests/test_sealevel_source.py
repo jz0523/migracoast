@@ -38,3 +38,10 @@ def test_converts_centimetres_to_feet_and_adds_the_offset(projections):
 def test_unknown_scenario_raises(projections):
     with pytest.raises(ValueError, match="scenario"):
         sealevel.parse_projections(FIXTURE, scenario="9.9 - MED")
+
+
+def test_drops_sites_with_no_projection(projections):
+    # A site whose every RSL year is zero has no projection. Adding the
+    # baseline offset to it would fabricate a small positive rise.
+    placeholder = projections[(projections.lat == 40.0) & (projections.lon == -79.0)]
+    assert placeholder.empty

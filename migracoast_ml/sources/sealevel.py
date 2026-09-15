@@ -50,6 +50,16 @@ def parse_projections(csv_path: Path, scenario: str = SLR_SCENARIO) -> pd.DataFr
     rows = raw[raw["Scenario"] == scenario].copy()
     rows = rows.dropna(subset=["Lat", "Long"])
 
+    # Some grid points carry zero in every projection year, meaning no
+    # projection exists. Adding the baseline offset would turn that into a
+    # fabricated rise, so those sites are excluded entirely.
+    year_columns = [
+        c for c in rows.columns
+        if c.startswith("RSL") and c.endswith("(cm)") and "VLM" not in c
+    ]
+    projected = rows[year_columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    rows = rows[(projected != 0).any(axis=1)]
+
     offset = pd.to_numeric(rows["Offset 2000 to 2005 (cm)"], errors="coerce").fillna(0.0)
     out = pd.DataFrame(
         {
