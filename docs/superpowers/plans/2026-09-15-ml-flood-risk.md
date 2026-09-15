@@ -123,7 +123,7 @@ RiskScorer.score_features(feats: dict) -> dict
 RiskScorer.save(path) / RiskScorer.load(path)
 ```
 
-**Critical invariant.** `FeatureBuilder.build` snaps its input to the containing 0.1 degree cell centre before computing anything. Training and serving therefore run identical arithmetic, and a query anywhere inside a cell returns that cell's score. Task 13 tests this invariant directly.
+**Critical invariant.** `FeatureBuilder.build` snaps its input to the containing 0.1 degree cell centre before computing anything. Training and serving therefore run identical arithmetic, and a query anywhere inside a cell returns that cell's score. Task 12 tests this invariant directly.
 
 ---
 
@@ -561,6 +561,167 @@ git commit -m "feat: add Natural Earth boundary fetcher"
 
 ---
 
+## Task 3b: Crash-safe writes for fetchers
+
+> **Added after review of Task 3. Already implemented** (see the corresponding
+> commit in the repository history) — this section exists to keep the plan's
+> record of the codebase accurate, not to be executed again.
+
+A review of Task 3 found a real correctness risk: `boundaries._download`
+writes downloaded bytes directly to their final path, and skips the download
+whenever that path already exists. If the process is killed mid-write, a
+truncated file is left at the final path, and every later run silently
+reuses it forever. The fix is one shared helper that writes to a sibling
+`.part` file and renames it into place, so the destination only ever holds a
+complete file. `boundaries.py` is retrofitted to use it here; the four
+fetchers written later in this plan (Tasks 4, 7, 9 and 10) use it from the
+start.
+
+**Files:**
+- Create: `migracoast_ml/sources/_io.py`
+- Create: `tests/test_io.py`
+- Modify: `migracoast_ml/sources/boundaries.py`
+- Modify: `.gitignore`
+
+- [x] **Step 1: Write the failing test**
+
+Create `tests/test_io.py`:
+
+```python
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from migracoast_ml.sources._io import atomic_write_bytes, atomic_write_csv
+
+
+def test_writes_bytes_to_the_destination(tmp_path):
+    target = tmp_path / "archive.zip"
+    atomic_write_bytes(target, b"payload")
+    assert target.read_bytes() == b"payload"
+
+
+def test_leaves_no_partial_file_behind(tmp_path):
+    target = tmp_path / "archive.zip"
+    atomic_write_bytes(target, b"payload")
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_overwrites_an_existing_file(tmp_path):
+    target = tmp_path / "archive.zip"
+    target.write_bytes(b"old")
+    atomic_write_bytes(target, b"new")
+    assert target.read_bytes() == b"new"
+
+
+def test_a_failed_write_never_corrupts_the_destination(tmp_path, monkeypatch):
+    """The property that makes skip-if-exists safe."""
+    target = tmp_path / "archive.zip"
+    target.write_bytes(b"complete old file")
+
+    def interrupted(self, other):
+        raise KeyboardInterrupt("killed mid-rename")
+
+    monkeypatch.setattr(Path, "replace", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        atomic_write_bytes(target, b"new")
+    assert target.read_bytes() == b"complete old file"
+
+
+def test_writes_a_frame_as_csv_without_index(tmp_path):
+    target = tmp_path / "claims.csv"
+    atomic_write_csv(pd.DataFrame({"a": [1, 2]}), target)
+    assert target.read_text().splitlines() == ["a", "1", "2"]
+    assert list(tmp_path.iterdir()) == [target]
+```
+
+- [x] **Step 2: Run the test to verify it fails**
+
+Run: `.venv/Scripts/python.exe -m pytest tests/test_io.py -v`
+Expected: collection error, `ModuleNotFoundError: No module named 'migracoast_ml.sources._io'`
+
+- [x] **Step 3: Write the implementation**
+
+Create `migracoast_ml/sources/_io.py`:
+
+```python
+"""Crash-safe file writes for the data fetchers.
+
+Fetchers skip a download when the destination already exists. Writing
+straight to that path would let a killed process leave a truncated file
+that every later run silently reuses. Writing to a sibling .part file and
+renaming it into place means the destination only ever holds a complete
+file. Path.replace is used rather than rename because it overwrites an
+existing target on Windows too.
+"""
+
+from pathlib import Path
+
+
+def _part_path(destination: Path) -> Path:
+    return destination.with_name(destination.name + ".part")
+
+
+def atomic_write_bytes(destination: Path, data: bytes) -> Path:
+    part = _part_path(destination)
+    part.write_bytes(data)
+    part.replace(destination)
+    return destination
+
+
+def atomic_write_csv(frame, destination: Path) -> Path:
+    part = _part_path(destination)
+    frame.to_csv(part, index=False)
+    part.replace(destination)
+    return destination
+```
+
+- [x] **Step 4: Retrofit `boundaries.py`**
+
+In `migracoast_ml/sources/boundaries.py`, add the import:
+
+```python
+from migracoast_ml.sources._io import atomic_write_bytes
+```
+
+and in `_download` replace:
+
+```python
+    destination.write_bytes(response.content)
+    return destination
+```
+
+with:
+
+```python
+    return atomic_write_bytes(destination, response.content)
+```
+
+Nothing else in that file changes.
+
+- [x] **Step 5: Ignore leftover part files**
+
+Append one line to `.gitignore`:
+
+```
+*.part
+```
+
+- [x] **Step 6: Run the test to verify it passes**
+
+Run: `.venv/Scripts/python.exe -m pytest tests/ -v`
+Expected: PASS, 22 passed (the existing 17 plus 5 new).
+
+- [x] **Step 7: Commit**
+
+```bash
+git add migracoast_ml/sources/_io.py migracoast_ml/sources/boundaries.py tests/test_io.py .gitignore
+git commit -m "fix: make fetcher downloads crash-safe with atomic writes"
+```
+
+---
+
 ## Task 4: Sea level projections source
 
 The NOAA CSV has 17 lines of citation text before the real header, values in
@@ -669,6 +830,7 @@ import pandas as pd
 import requests
 
 from migracoast_ml.config import RAW_DIR, SLR_SCENARIO, ensure_dirs
+from migracoast_ml.sources._io import atomic_write_bytes
 
 SLR_URL = "https://oceanservice.noaa.gov/hazards/sealevelrise/Sea_Level_Rise_Datasets_2022.zip"
 
@@ -686,8 +848,7 @@ def fetch_sealevel(force: bool = False) -> Path:
     ensure_dirs()
     response = requests.get(SLR_URL, timeout=180, allow_redirects=True)
     response.raise_for_status()
-    destination.write_bytes(response.content)
-    return destination
+    return atomic_write_bytes(destination, response.content)
 
 
 def extract_projections_csv(zip_path: Path, target_dir: Path | None = None) -> Path:
@@ -698,8 +859,7 @@ def extract_projections_csv(zip_path: Path, target_dir: Path | None = None) -> P
         if not names:
             raise ValueError("No sea level projections CSV inside the archive")
         out = target_dir / "slr_projections.csv"
-        out.write_bytes(archive.read(names[0]))
-        return out
+        return atomic_write_bytes(out, archive.read(names[0]))
 
 
 def parse_projections(csv_path: Path, scenario: str = SLR_SCENARIO) -> pd.DataFrame:
@@ -912,7 +1072,7 @@ def test_picks_the_nearest_projection_site(index):
 
 def test_a_distant_point_still_returns_a_value(index):
     feats = index.features(0.0, 0.0)
-    assert feats["slr_2050_ft"] in (1.08, 1.15)
+    assert feats["slr_2050_ft"] == pytest.approx(1.08)
 
 
 def test_empty_table_raises():
@@ -1041,6 +1201,7 @@ from urllib.parse import urlencode
 import requests
 
 from migracoast_ml.config import RAW_DIR, ensure_dirs
+from migracoast_ml.sources._io import atomic_write_bytes
 
 # Only the 30 arc-second dataset works; the 60 arc-second one returns HTTP 500.
 ETOPO_URL = (
@@ -1094,7 +1255,7 @@ def fetch_elevation(states_gdf, force: bool = False) -> list[Path]:
         south, north, west, east = pad_bounds(row.geometry.bounds)
         response = requests.get(build_url(south, north, west, east), timeout=600)
         response.raise_for_status()
-        destination.write_bytes(response.content)
+        atomic_write_bytes(destination, response.content)
         written.append(destination)
     return written
 ```
@@ -1200,9 +1361,12 @@ def _synthetic_grid(tmp_path):
     with netCDF4.Dataset(path, "w") as ds:
         ds.createDimension("lat", len(lats))
         ds.createDimension("lon", len(lons))
-        ds.createVariable("lat", "f8", ("lat",))[:] = lats
-        ds.createVariable("lon", "f8", ("lon",))[:] = lons
-        ds.createVariable("z", "f4", ("lat", "lon"))[:] = np.full((len(lats), len(lons)), 4.0)
+        lat_var = ds.createVariable("lat", "f8", ("lat",))
+        lat_var[:] = lats
+        lon_var = ds.createVariable("lon", "f8", ("lon",))
+        lon_var[:] = lons
+        z_var = ds.createVariable("z", "f4", ("lat", "lon"))
+        z_var[:, :] = np.full((len(lats), len(lons)), 4.0)
     return ElevationGrid.from_dir(tmp_path)
 ```
 
@@ -1411,6 +1575,7 @@ import requests
 
 from migracoast_ml.config import RAW_DIR, STATES, ensure_dirs
 from migracoast_ml.features.grid import snap_to_cell
+from migracoast_ml.sources._io import atomic_write_csv
 
 # v2 (FimaNfipClaims) is deprecated and disappears on 2026-10-15.
 FEMA_URL = "https://www.fema.gov/api/open/v3/NfipClaims"
@@ -1468,7 +1633,7 @@ def fetch_claims(states=STATES, force: bool = False) -> Path:
                     break
                 skip += PAGE_SIZE
 
-    pd.concat(frames, ignore_index=True).to_csv(destination, index=False)
+    atomic_write_csv(pd.concat(frames, ignore_index=True), destination)
     return destination
 
 
@@ -1610,6 +1775,7 @@ from migracoast_ml.config import (
     STORM_YEARS,
     ensure_dirs,
 )
+from migracoast_ml.sources._io import atomic_write_csv
 
 STORM_INDEX_URL = "https://www.ncei.noaa.gov/pub/data/swdi/stormevents/csvfiles/"
 
@@ -1662,7 +1828,7 @@ def fetch_storms(years=STORM_YEARS, force: bool = False) -> Path:
             keep = [c for c in USE_COLUMNS if c in frame.columns]
             frames.append(frame[keep])
 
-    pd.concat(frames, ignore_index=True).to_csv(destination, index=False)
+    atomic_write_csv(pd.concat(frames, ignore_index=True), destination)
     return destination
 
 
@@ -2607,12 +2773,27 @@ def test_reports_overall_and_coastal_metrics(toy):
         assert column in table.columns
 
 
-def test_no_block_appears_in_both_train_and_test(toy):
-    """The guarantee that makes the score honest."""
-    from sklearn.model_selection import GroupKFold
+def test_no_block_appears_in_both_train_and_test(toy, monkeypatch):
+    """The guarantee that makes the score honest, checked on our own code path."""
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+
+    import migracoast_ml.models.evaluate as evaluate
 
     X, y, groups, _ = toy
-    for train_idx, test_idx in GroupKFold(n_splits=3).split(X, y, groups):
+    seen = []
+
+    class SpyGroupKFold(evaluate.GroupKFold):
+        def split(self, X, y=None, groups=None):
+            for train_idx, test_idx in super().split(X, y, groups):
+                seen.append((train_idx, test_idx))
+                yield train_idx, test_idx
+
+    monkeypatch.setattr(evaluate, "GroupKFold", SpyGroupKFold)
+    evaluate.oof_predictions(X, y, groups, Pipeline([("m", Ridge())]), n_splits=3)
+
+    assert len(seen) == 3
+    for train_idx, test_idx in seen:
         assert not set(groups.iloc[train_idx]) & set(groups.iloc[test_idx])
 
 
@@ -3003,10 +3184,12 @@ def test_saved_scorer_predicts_on_a_feature_dict(table, tmp_path):
 def test_reference_distribution_comes_from_coastal_cells(table, tmp_path):
     from migracoast_ml.models.scoring import RiskScorer
 
+    table = table.copy()
+    # Exactly 100 of the 300 cells are coastal (under 30 km).
+    table["coast_km"] = [5.0 if i % 3 == 0 else 100.0 for i in range(len(table))]
     train_from_table(table, out_dir=tmp_path)
     scorer = RiskScorer.load(tmp_path / "risk_model.joblib")
-    assert scorer.reference.size > 0
-    assert scorer.reference.size <= len(table)
+    assert scorer.reference.size == 100
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -3831,16 +4014,27 @@ def test_reconstruction_raises_if_counts_disagree(tmp_path):
 
 def test_alignment_confidence_is_positive_when_score_tracks_elevation():
     frame = pd.DataFrame(
-        {"rule_score": [30, 50, 70, 90], "elev_mean": [0.5, 2.0, 6.0, 20.0]}
+        {
+            "rule_score": list(range(10, 110, 10)),
+            "elev_mean": [0.5, 1, 2, 3, 5, 8, 12, 20, 35, 60],
+        }
     )
     assert alignment_confidence(frame) > 0.5
 
 
 def test_alignment_confidence_is_negative_when_the_mapping_is_shuffled():
     frame = pd.DataFrame(
-        {"rule_score": [90, 70, 50, 30], "elev_mean": [0.5, 2.0, 6.0, 20.0]}
+        {
+            "rule_score": list(range(100, 0, -10)),
+            "elev_mean": [0.5, 1, 2, 3, 5, 8, 12, 20, 35, 60],
+        }
     )
     assert alignment_confidence(frame) < 0
+
+
+def test_alignment_confidence_is_nan_below_ten_rows():
+    frame = pd.DataFrame({"rule_score": [1, 2, 3], "elev_mean": [1, 2, 3]})
+    assert np.isnan(alignment_confidence(frame))
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -4029,7 +4223,7 @@ def run_comparison(
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_baseline.py -v`
-Expected: PASS, 7 passed
+Expected: PASS, 8 passed
 
 - [ ] **Step 5: Run the comparison and accept whatever it says**
 
@@ -4342,6 +4536,7 @@ Checked against the design spec on 2026-09-15.
 | 9 Serving | 21, 22 |
 | 10 Security fix | 22 |
 | 11 Repository layout | 1, 13 |
+| Fetcher crash-safety (added after Task 3 review) | 3b, 4, 7, 9, 10 |
 | 12 Testing | every task |
 | 13 What is committed | 1, 19 |
 | 14 Deliverables | 24, 25 |
