@@ -448,14 +448,14 @@ def test_urls_point_at_the_natural_earth_cdn():
 def test_filter_states_keeps_only_the_configured_five():
     gdf = gpd.GeoDataFrame(
         {
-            "admin": ["United States of America"] * 3 + ["Canada"],
-            "postal": ["MA", "FL", "TX", "ON"],
-            "geometry": [Polygon([(0, 0), (1, 0), (1, 1)])] * 4,
+            "admin": ["United States of America"] * 6 + ["Canada"],
+            "postal": ["MA", "NY", "PA", "FL", "CA", "TX", "ON"],
+            "geometry": [Polygon([(0, 0), (1, 0), (1, 1)])] * 7,
         },
         crs="EPSG:4326",
     )
     out = boundaries.filter_states(gdf)
-    assert sorted(out.postal) == ["FL", "MA"]
+    assert sorted(out.postal) == ["CA", "FL", "MA", "NY", "PA"]
 
 
 def test_filter_states_raises_when_a_state_is_missing():
