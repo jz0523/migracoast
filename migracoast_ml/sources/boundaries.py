@@ -6,6 +6,7 @@ import geopandas as gpd
 import requests
 
 from migracoast_ml.config import RAW_DIR, STATES, ensure_dirs
+from migracoast_ml.sources._io import atomic_write_bytes
 
 STATES_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip"
 COAST_URL = "https://naciscdn.org/naturalearth/10m/physical/ne_10m_coastline.zip"
@@ -17,8 +18,7 @@ def _download(url: str, destination: Path, force: bool = False) -> Path:
     ensure_dirs()
     response = requests.get(url, timeout=180, allow_redirects=True)
     response.raise_for_status()
-    destination.write_bytes(response.content)
-    return destination
+    return atomic_write_bytes(destination, response.content)
 
 
 def fetch_boundaries(force: bool = False) -> tuple[Path, Path]:

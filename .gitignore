@@ -8,3 +8,4 @@ data/processed/
 *.nc
 *.zip
 .ipynb_checkpoints/
+*.part
