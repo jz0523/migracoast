@@ -724,6 +724,8 @@ git commit -m "fix: make fetcher downloads crash-safe with atomic writes"
 
 ## Task 4: Sea level projections source
 
+Revised after real-data review: see commit message.
+
 The NOAA CSV has 17 lines of citation text before the real header, values in
 centimetres, and 15 scenario rows per site. All three are handled here.
 
@@ -762,6 +764,7 @@ Boston,235,8443970,"Boston, MA",,42.4,-71.1,Northeast,1,1.0 - MED,0.1,2,3,0,10,1
 Boston,235,8443970,"Boston, MA",,42.4,-71.1,Northeast,1,1.0 - LOW,0.1,2,3,0,8,13,18,25,32,40,48,56,64,72,80,88,96,104
 Boston,235,8443970,"Boston, MA",,42.4,-71.1,Northeast,1,0.5 - MED,0.1,2,3,0,7,11,15,20,26,32,38,44,50,56,62,68,74,80
 Miami,520,8723170,"Miami, FL",,25.8,-80.2,Southeast,1,1.0 - MED,0.2,2,4,0,12,19,26,35,45,56,67,79,91,103,115,127,139,151
+grid_40.0_281.0,1000000000,0,grid_40.0_281.0,,40.0,-79.0,Northeast,1,1.0 - MED,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -809,6 +812,13 @@ def test_converts_centimetres_to_feet_and_adds_the_offset(projections):
 def test_unknown_scenario_raises(projections):
     with pytest.raises(ValueError, match="scenario"):
         sealevel.parse_projections(FIXTURE, scenario="9.9 - MED")
+
+
+def test_drops_sites_with_no_projection(projections):
+    # A site whose every RSL year is zero has no projection. Adding the
+    # baseline offset to it would fabricate a small positive rise.
+    placeholder = projections[(projections.lat == 40.0) & (projections.lon == -79.0)]
+    assert placeholder.empty
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
@@ -873,6 +883,16 @@ def parse_projections(csv_path: Path, scenario: str = SLR_SCENARIO) -> pd.DataFr
     rows = raw[raw["Scenario"] == scenario].copy()
     rows = rows.dropna(subset=["Lat", "Long"])
 
+    # Some grid points carry zero in every projection year, meaning no
+    # projection exists. Adding the baseline offset would turn that into a
+    # fabricated rise, so those sites are excluded entirely.
+    year_columns = [
+        c for c in rows.columns
+        if c.startswith("RSL") and c.endswith("(cm)") and "VLM" not in c
+    ]
+    projected = rows[year_columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    rows = rows[(projected != 0).any(axis=1)]
+
     offset = pd.to_numeric(rows["Offset 2000 to 2005 (cm)"], errors="coerce").fillna(0.0)
     out = pd.DataFrame(
         {
@@ -891,7 +911,7 @@ def parse_projections(csv_path: Path, scenario: str = SLR_SCENARIO) -> pd.DataFr
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sealevel_source.py -v`
-Expected: PASS, 5 passed
+Expected: PASS, 6 passed
 
 - [ ] **Step 6: Commit**
 
@@ -1028,6 +1048,8 @@ git commit -m "feat: add coastline distance index"
 
 ## Task 6: Sea level feature index
 
+Revised after real-data review: see commit message.
+
 **Files:**
 - Create: `migracoast_ml/features/sealevel.py`
 - Create: `tests/test_sealevel_features.py`
@@ -1078,6 +1100,27 @@ def test_a_distant_point_still_returns_a_value(index):
 def test_empty_table_raises():
     with pytest.raises(ValueError, match="empty"):
         SeaLevelIndex(pd.DataFrame(columns=["lat", "lon", "slr_2050_ft", "slr_2100_ft"]))
+
+
+def test_picks_the_true_great_circle_nearest_site():
+    # Query at (43.0, -70.0). Site A sits due north at (52.8, -70.0),
+    # site B sits due west at (43.0, -83.4). The equirectangular
+    # approximation (which scales longitude by cos(query latitude)) puts
+    # site A closer, but true haversine distance is A=1089.7118 km vs
+    # B=1088.5691 km, so B is actually nearer by about 1.14 km.
+    site_a = SeaLevelIndex(
+        pd.DataFrame(
+            {
+                "lat": [52.8, 43.0],
+                "lon": [-70.0, -83.4],
+                "slr_2050_ft": [1.08, 1.15],
+                "slr_2100_ft": [2.59, 2.99],
+            }
+        )
+    )
+    feats = site_a.features(43.0, -70.0)
+    assert feats["slr_2050_ft"] == pytest.approx(1.15)
+    assert feats["slr_2100_ft"] == pytest.approx(2.99)
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -1108,11 +1151,14 @@ class SeaLevelIndex:
         self._slr_2100 = df["slr_2100_ft"].to_numpy(dtype=float)
 
     def _nearest(self, lat: float, lon: float) -> int:
-        # Equirectangular approximation is sufficient for picking a nearest
-        # site; the candidate sites are far apart relative to the error.
-        dlat = self._lat - lat
-        dlon = (self._lon - lon) * np.cos(np.radians(lat))
-        return int(np.argmin(dlat * dlat + dlon * dlon))
+        # True great-circle distance. An equirectangular shortcut picked the
+        # wrong site for about 2% of real grid cells.
+        phi1 = np.radians(lat)
+        phi2 = np.radians(self._lat)
+        dphi = phi2 - phi1
+        dlambda = np.radians(self._lon - lon)
+        a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
+        return int(np.argmin(a))
 
     def features(self, lat: float, lon: float) -> dict:
         i = self._nearest(lat, lon)
@@ -1125,7 +1171,7 @@ class SeaLevelIndex:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sealevel_features.py -v`
-Expected: PASS, 4 passed
+Expected: PASS, 5 passed
 
 - [ ] **Step 5: Commit**
 
