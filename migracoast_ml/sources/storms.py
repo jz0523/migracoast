@@ -55,12 +55,16 @@ def fetch_storms(years=STORM_YEARS, force: bool = False) -> Path:
 
     index = parse_index(requests.get(STORM_INDEX_URL, timeout=180).text)
 
+    # A year silently missing from the listing would shrink the event count
+    # while HazardIndex still divides by the full span, understating rates.
+    missing = [year for year in years if year not in index]
+    if missing:
+        raise ValueError(f"Storm Events listing is missing years: {missing}")
+
     frames = []
     with requests.Session() as session:
         for year in years:
-            filename = index.get(year)
-            if filename is None:
-                continue
+            filename = index[year]
             response = session.get(STORM_INDEX_URL + filename, timeout=300)
             response.raise_for_status()
             text = gzip.decompress(response.content).decode("utf-8", "replace")

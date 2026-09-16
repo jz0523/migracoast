@@ -1795,6 +1795,8 @@ git commit -m "feat: add FEMA NFIP claims fetcher"
 
 ## Task 10: Storm events source
 
+Revised after live NOAA review: see commit message.
+
 NOAA appends a creation date to each filename and changes it when republishing,
 so filenames must be discovered by pattern, never hardcoded.
 
@@ -1875,6 +1877,38 @@ def test_events_without_coordinates_are_dropped():
         }
     )
     assert len(storms.classify_events(events)) == 1
+
+
+def test_a_missing_year_fails_loudly(monkeypatch):
+    """A skipped year would shrink the numerator while HazardIndex still
+    divides by a fixed 25, silently understating hazard rates."""
+    monkeypatch.setattr(
+        storms,
+        "parse_index",
+        lambda html: {2000: "StormEvents_details-ftp_v1.0_d2000_c20260323.csv.gz"},
+    )
+
+    class Response:
+        text = "<html></html>"
+
+        def raise_for_status(self):
+            return None
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url, timeout=None):
+            raise AssertionError("fetch_storms must not download when a year is missing")
+
+    monkeypatch.setattr(storms.requests, "get", lambda url, timeout=None: Response())
+    monkeypatch.setattr(storms.requests, "Session", Session)
+
+    with pytest.raises(ValueError, match="2001"):
+        storms.fetch_storms(years=(2000, 2001), force=True)
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
@@ -1944,12 +1978,16 @@ def fetch_storms(years=STORM_YEARS, force: bool = False) -> Path:
 
     index = parse_index(requests.get(STORM_INDEX_URL, timeout=180).text)
 
+    # A year silently missing from the listing would shrink the event count
+    # while HazardIndex still divides by the full span, understating rates.
+    missing = [year for year in years if year not in index]
+    if missing:
+        raise ValueError(f"Storm Events listing is missing years: {missing}")
+
     frames = []
     with requests.Session() as session:
         for year in years:
-            filename = index.get(year)
-            if filename is None:
-                continue
+            filename = index[year]
             response = session.get(STORM_INDEX_URL + filename, timeout=300)
             response.raise_for_status()
             text = gzip.decompress(response.content).decode("utf-8", "replace")
@@ -1986,7 +2024,7 @@ def classify_events(events: pd.DataFrame) -> pd.DataFrame:
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_storms.py -v`
-Expected: PASS, 5 passed
+Expected: PASS, 6 passed
 
 - [ ] **Step 6: Commit**
 

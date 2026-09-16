@@ -49,3 +49,35 @@ def test_events_without_coordinates_are_dropped():
         }
     )
     assert len(storms.classify_events(events)) == 1
+
+
+def test_a_missing_year_fails_loudly(monkeypatch):
+    """A skipped year would shrink the numerator while HazardIndex still
+    divides by a fixed 25, silently understating hazard rates."""
+    monkeypatch.setattr(
+        storms,
+        "parse_index",
+        lambda html: {2000: "StormEvents_details-ftp_v1.0_d2000_c20260323.csv.gz"},
+    )
+
+    class Response:
+        text = "<html></html>"
+
+        def raise_for_status(self):
+            return None
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url, timeout=None):
+            raise AssertionError("fetch_storms must not download when a year is missing")
+
+    monkeypatch.setattr(storms.requests, "get", lambda url, timeout=None: Response())
+    monkeypatch.setattr(storms.requests, "Session", Session)
+
+    with pytest.raises(ValueError, match="2001"):
+        storms.fetch_storms(years=(2000, 2001), force=True)
