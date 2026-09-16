@@ -33,9 +33,13 @@ FEMA_FIELDS = (
 
 def build_page_url(state: str, skip: int) -> str:
     """Compose one page request for a single state."""
+    # $orderby pins a stable sort. Without it, paging with $skip relies on an
+    # undocumented default order, and a shift between requests would duplicate
+    # or drop claims with nothing downstream able to notice.
     query = urlencode(
         {
             "$filter": f"state eq '{state}'",
+            "$orderby": "id",
             "$select": ",".join(FEMA_FIELDS),
             "$top": PAGE_SIZE,
             "$skip": skip,
@@ -66,6 +70,9 @@ def fetch_claims(states=STATES, force: bool = False) -> Path:
                 if len(page) < PAGE_SIZE:
                     break
                 skip += PAGE_SIZE
+
+    if not frames:
+        raise ValueError(f"No claims returned for states: {tuple(states)}")
 
     atomic_write_csv(pd.concat(frames, ignore_index=True), destination)
     return destination
