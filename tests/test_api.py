@@ -8,7 +8,10 @@ from migracoast_ml.config import FEATURE_NAMES
 
 class StubBuilder:
     def build(self, lat, lon):
-        return {name: 1.0 for name in FEATURE_NAMES}
+        return {
+            name: (float("nan") if name == "elev_mean" else 1.0)
+            for name in FEATURE_NAMES
+        }
 
 
 class StubScorer:
@@ -96,5 +99,32 @@ def test_model_info_reports_the_winner(client):
 
 def test_errors_are_json_not_html(client):
     response = client.post("/ml/risk", json={})
+    assert response.status_code == 400
+    assert response.is_json
+
+
+def test_non_finite_features_are_nulled_not_nan(client):
+    """Flask renders NaN as a bare token that strict JSON parsers reject."""
+    import json as jsonlib
+
+    response = client.post("/ml/risk", json={"latitude": 42.4, "longitude": -71.1})
+    body = response.get_data(as_text=True)
+    assert "NaN" not in body
+    jsonlib.loads(body)
+
+
+def test_null_resolution_falls_back_to_the_default(client):
+    response = client.post(
+        "/ml/heatmap",
+        json={"north": 42.4, "south": 42.2, "east": -71.0, "west": -71.2, "resolution": None},
+    )
+    assert response.status_code == 200
+
+
+def test_non_numeric_resolution_is_a_clean_400(client):
+    response = client.post(
+        "/ml/heatmap",
+        json={"north": 42.4, "south": 42.2, "east": -71.0, "west": -71.2, "resolution": "coarse"},
+    )
     assert response.status_code == 400
     assert response.is_json

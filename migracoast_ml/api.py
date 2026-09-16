@@ -1,5 +1,7 @@
 """Flask blueprint exposing the learned risk model."""
 
+import math
+
 from flask import Blueprint, jsonify, request
 
 from migracoast_ml.config import CELL_SIZE, STATES
@@ -16,6 +18,22 @@ def _read_number(payload, key):
         return float(payload[key])
     except (TypeError, ValueError):
         raise ValueError(f"Field {key} must be a number")
+
+
+def _json_safe(value):
+    """Replace non-finite floats with None.
+
+    Around one percent of cells are all water and carry NaN terrain
+    features. Flask renders NaN as a bare token that is not valid JSON,
+    so a strict client cannot parse the response at all.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _validate_point(lat, lon):
@@ -50,15 +68,17 @@ def create_blueprint(scorer, builder, covered_states=STATES) -> Blueprint:
 
         cell_lat, cell_lon = snap_to_cell(lat, lon)
         return jsonify(
-            {
-                **result,
-                "latitude": lat,
-                "longitude": lon,
-                "cell": {"lat": cell_lat, "lon": cell_lon},
-                "covered_states": list(covered_states),
-                "features": features,
-                "top_contributors": contributors,
-            }
+            _json_safe(
+                {
+                    **result,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "cell": {"lat": cell_lat, "lon": cell_lon},
+                    "covered_states": list(covered_states),
+                    "features": features,
+                    "top_contributors": contributors,
+                }
+            )
         )
 
     @blueprint.post("/heatmap")
@@ -69,7 +89,7 @@ def create_blueprint(scorer, builder, covered_states=STATES) -> Blueprint:
             south = _read_number(payload, "south")
             east = _read_number(payload, "east")
             west = _read_number(payload, "west")
-            resolution = float(payload.get("resolution", CELL_SIZE))
+            resolution = CELL_SIZE if payload.get("resolution") is None else _read_number(payload, "resolution")
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -103,7 +123,7 @@ def create_blueprint(scorer, builder, covered_states=STATES) -> Blueprint:
                     }
                 )
 
-        return jsonify({"count": len(cells), "resolution": resolution, "cells": cells})
+        return jsonify(_json_safe({"count": len(cells), "resolution": resolution, "cells": cells}))
 
     @blueprint.get("/model-info")
     def model_info():

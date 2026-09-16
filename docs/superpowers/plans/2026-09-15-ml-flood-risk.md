@@ -3930,7 +3930,45 @@ def test_errors_are_json_not_html(client):
     response = client.post("/ml/risk", json={})
     assert response.status_code == 400
     assert response.is_json
+
+
+def test_non_finite_features_are_nulled_not_nan(client):
+    """Flask renders NaN as a bare token that strict JSON parsers reject."""
+    import json as jsonlib
+
+    response = client.post("/ml/risk", json={"latitude": 42.4, "longitude": -71.1})
+    body = response.get_data(as_text=True)
+    assert "NaN" not in body
+    jsonlib.loads(body)
+
+
+def test_null_resolution_falls_back_to_the_default(client):
+    response = client.post(
+        "/ml/heatmap",
+        json={"north": 42.4, "south": 42.2, "east": -71.0, "west": -71.2, "resolution": None},
+    )
+    assert response.status_code == 200
+
+
+def test_non_numeric_resolution_is_a_clean_400(client):
+    response = client.post(
+        "/ml/heatmap",
+        json={"north": 42.4, "south": 42.2, "east": -71.0, "west": -71.2, "resolution": "coarse"},
+    )
+    assert response.status_code == 400
+    assert response.is_json
 ```
+
+Added after review: about 82 of 8,494 real cells are all-water and carry NaN
+terrain features. Flask serialises a raw NaN as a bare `NaN` token, which is
+not valid JSON, so a strict client cannot parse `/ml/risk`'s response for
+those cells at all. Separately, `resolution` was read with
+`float(payload.get("resolution", CELL_SIZE))` outside the guarded
+`_read_number` helper, so a JSON `null` raised an uncaught `TypeError` and
+produced a 500 with an HTML body — contradicting this file's own
+`test_errors_are_json_not_html`. `StubBuilder.build` was changed to return
+`float("nan")` for `elev_mean` so the first new test exercises a real
+non-finite value.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -3943,6 +3981,8 @@ Create `migracoast_ml/api.py`:
 
 ```python
 """Flask blueprint exposing the learned risk model."""
+
+import math
 
 from flask import Blueprint, jsonify, request
 
@@ -3960,6 +4000,22 @@ def _read_number(payload, key):
         return float(payload[key])
     except (TypeError, ValueError):
         raise ValueError(f"Field {key} must be a number")
+
+
+def _json_safe(value):
+    """Replace non-finite floats with None.
+
+    Around one percent of cells are all water and carry NaN terrain
+    features. Flask renders NaN as a bare token that is not valid JSON,
+    so a strict client cannot parse the response at all.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _validate_point(lat, lon):
@@ -3994,15 +4050,17 @@ def create_blueprint(scorer, builder, covered_states=STATES) -> Blueprint:
 
         cell_lat, cell_lon = snap_to_cell(lat, lon)
         return jsonify(
-            {
-                **result,
-                "latitude": lat,
-                "longitude": lon,
-                "cell": {"lat": cell_lat, "lon": cell_lon},
-                "covered_states": list(covered_states),
-                "features": features,
-                "top_contributors": contributors,
-            }
+            _json_safe(
+                {
+                    **result,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "cell": {"lat": cell_lat, "lon": cell_lon},
+                    "covered_states": list(covered_states),
+                    "features": features,
+                    "top_contributors": contributors,
+                }
+            )
         )
 
     @blueprint.post("/heatmap")
@@ -4013,7 +4071,7 @@ def create_blueprint(scorer, builder, covered_states=STATES) -> Blueprint:
             south = _read_number(payload, "south")
             east = _read_number(payload, "east")
             west = _read_number(payload, "west")
-            resolution = float(payload.get("resolution", CELL_SIZE))
+            resolution = CELL_SIZE if payload.get("resolution") is None else _read_number(payload, "resolution")
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -4047,7 +4105,7 @@ def create_blueprint(scorer, builder, covered_states=STATES) -> Blueprint:
                     }
                 )
 
-        return jsonify({"count": len(cells), "resolution": resolution, "cells": cells})
+        return jsonify(_json_safe({"count": len(cells), "resolution": resolution, "cells": cells}))
 
     @blueprint.get("/model-info")
     def model_info():
@@ -4070,7 +4128,7 @@ def create_blueprint(scorer, builder, covered_states=STATES) -> Blueprint:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_api.py -v`
-Expected: PASS, 9 passed
+Expected: PASS, 12 passed
 
 - [ ] **Step 5: Commit**
 
