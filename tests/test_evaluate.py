@@ -75,6 +75,39 @@ def test_oof_predictions_cover_every_row_exactly_once(toy):
     assert not np.isnan(preds).any()
 
 
+def test_reports_how_many_folds_produced_the_coastal_metric(toy):
+    """The winner is chosen on coastal RMSE, so a mean computed from fewer
+    folds than it appears must be visible rather than silent."""
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+
+    X, y, groups, coastal = toy
+    table = spatial_cv(X, y, groups, coastal, models={"a": Pipeline([("m", Ridge())])}, n_splits=3)
+    assert table["coastal_n_folds"].iloc[0] == 3
+
+
+def test_coastal_fold_count_drops_when_coastal_cells_are_scarce(toy):
+    """A fold with fewer than three coastal cells contributes nothing."""
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+
+    X, y, groups, _ = toy
+    scarce = pd.Series([i < 4 for i in range(len(X))])
+    table = spatial_cv(X, y, groups, scarce, models={"a": Pipeline([("m", Ridge())])}, n_splits=3)
+    assert table["coastal_n_folds"].iloc[0] < 3
+
+
+def test_a_constant_prediction_does_not_warn():
+    """The zero-variance guard must tolerate floating point noise."""
+    import warnings
+
+    from migracoast_ml.models.evaluate import _safe_spearman
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert np.isnan(_safe_spearman([1.0, 2.0, 3.0], [0.5, 0.5, 0.5 + 6.9e-18]))
+
+
 def test_a_useful_model_beats_a_constant_one(toy):
     from sklearn.dummy import DummyRegressor
     from sklearn.linear_model import Ridge

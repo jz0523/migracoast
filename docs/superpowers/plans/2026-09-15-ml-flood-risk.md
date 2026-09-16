@@ -3082,6 +3082,39 @@ def test_a_useful_model_beats_a_constant_one(toy):
     real = table[table.model == "real"].rmse_mean.iloc[0]
     constant = table[table.model == "constant"].rmse_mean.iloc[0]
     assert real < constant
+
+
+def test_reports_how_many_folds_produced_the_coastal_metric(toy):
+    """The winner is chosen on coastal RMSE, so a mean computed from fewer
+    folds than it appears must be visible rather than silent."""
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+
+    X, y, groups, coastal = toy
+    table = spatial_cv(X, y, groups, coastal, models={"a": Pipeline([("m", Ridge())])}, n_splits=3)
+    assert table["coastal_n_folds"].iloc[0] == 3
+
+
+def test_coastal_fold_count_drops_when_coastal_cells_are_scarce(toy):
+    """A fold with fewer than three coastal cells contributes nothing."""
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+
+    X, y, groups, _ = toy
+    scarce = pd.Series([i < 4 for i in range(len(X))])
+    table = spatial_cv(X, y, groups, scarce, models={"a": Pipeline([("m", Ridge())])}, n_splits=3)
+    assert table["coastal_n_folds"].iloc[0] < 3
+
+
+def test_a_constant_prediction_does_not_warn():
+    """The zero-variance guard must tolerate floating point noise."""
+    import warnings
+
+    from migracoast_ml.models.evaluate import _safe_spearman
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert np.isnan(_safe_spearman([1.0, 2.0, 3.0], [0.5, 0.5, 0.5 + 6.9e-18]))
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -3110,7 +3143,9 @@ from sklearn.model_selection import GroupKFold
 
 
 def _safe_spearman(truth, predicted) -> float:
-    if len(truth) < 3 or np.std(predicted) == 0:
+    # An exact zero test misses floating point noise: a constant predictor
+    # can measure a standard deviation around 1e-18 and still be constant.
+    if len(truth) < 3 or np.std(predicted) < 1e-12:
         return float("nan")
     return float(spearmanr(truth, predicted).statistic)
 
@@ -3160,6 +3195,9 @@ def spatial_cv(X, y, groups, coastal, models, n_splits: int = 5) -> pd.DataFrame
                 "coastal_rmse_mean": float(np.nanmean(fold["coastal_rmse"])),
                 "coastal_rmse_std": float(np.nanstd(fold["coastal_rmse"])),
                 "coastal_spearman_mean": float(np.nanmean(fold["coastal_spearman"])),
+                # How many folds actually had enough coastal cells to score.
+                # Fewer than n_splits means the coastal mean is a partial average.
+                "coastal_n_folds": int(len(fold["coastal_rmse"])),
             }
         )
 
@@ -3182,7 +3220,7 @@ def oof_predictions(X, y, groups, model, n_splits: int = 5) -> np.ndarray:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_evaluate.py -v`
-Expected: PASS, 5 passed
+Expected: PASS, 8 passed
 
 - [ ] **Step 5: Commit**
 
@@ -3190,6 +3228,19 @@ Expected: PASS, 5 passed
 git add migracoast_ml/models/evaluate.py tests/test_evaluate.py
 git commit -m "feat: add spatially blocked cross-validation"
 ```
+
+**Revised after review: the coastal mean could be a partial average with no
+indication.** `coastal_rmse_mean` and `coastal_spearman_mean` are averaged only
+over folds where the test set held at least 3 coastal cells; folds below that
+bar are skipped silently, so a mean that looks like it came from `n_splits`
+folds could actually be a partial average with no trace of the shortfall. The
+model is selected on coastal RMSE and that number is quoted in the README, so
+how many folds produced it must be visible. Separately, `_safe_spearman`'s
+zero-variance guard used exact equality (`np.std(predicted) == 0`), which a
+constant predictor can miss by measuring a standard deviation around 1e-18,
+triggering a `ConstantInputWarning` from scipy. Both were fixed: `spatial_cv`
+now reports a `coastal_n_folds` column, and the guard uses a `1e-12`
+tolerance instead of exact equality.
 
 ---
 

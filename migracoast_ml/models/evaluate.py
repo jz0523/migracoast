@@ -14,7 +14,9 @@ from sklearn.model_selection import GroupKFold
 
 
 def _safe_spearman(truth, predicted) -> float:
-    if len(truth) < 3 or np.std(predicted) == 0:
+    # An exact zero test misses floating point noise: a constant predictor
+    # can measure a standard deviation around 1e-18 and still be constant.
+    if len(truth) < 3 or np.std(predicted) < 1e-12:
         return float("nan")
     return float(spearmanr(truth, predicted).statistic)
 
@@ -64,6 +66,9 @@ def spatial_cv(X, y, groups, coastal, models, n_splits: int = 5) -> pd.DataFrame
                 "coastal_rmse_mean": float(np.nanmean(fold["coastal_rmse"])),
                 "coastal_rmse_std": float(np.nanstd(fold["coastal_rmse"])),
                 "coastal_spearman_mean": float(np.nanmean(fold["coastal_spearman"])),
+                # How many folds actually had enough coastal cells to score.
+                # Fewer than n_splits means the coastal mean is a partial average.
+                "coastal_n_folds": int(len(fold["coastal_rmse"])),
             }
         )
 
