@@ -34,7 +34,8 @@
       "spearman_mean": 0.6664098679972705,
       "coastal_rmse_mean": 2.088819410336351,
       "coastal_rmse_std": 0.18893530347322934,
-      "coastal_spearman_mean": 0.6284256971960404
+      "coastal_spearman_mean": 0.6284256971960404,
+      "coastal_n_folds": 5
     },
     {
       "model": "gradient_boosting",
@@ -45,7 +46,8 @@
       "spearman_mean": 0.7599889901609209,
       "coastal_rmse_mean": 1.5304852815015635,
       "coastal_rmse_std": 0.08655955725509394,
-      "coastal_spearman_mean": 0.7953911689145142
+      "coastal_spearman_mean": 0.7953911689145142,
+      "coastal_n_folds": 5
     },
     {
       "model": "neural_net",
@@ -56,7 +58,8 @@
       "spearman_mean": 0.7484219060835697,
       "coastal_rmse_mean": 1.5871695782977269,
       "coastal_rmse_std": 0.11758960290486327,
-      "coastal_spearman_mean": 0.7853491440023572
+      "coastal_spearman_mean": 0.7853491440023572,
+      "coastal_n_folds": 5
     }
   ]
 }
