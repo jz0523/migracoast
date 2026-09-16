@@ -1575,6 +1575,8 @@ git commit -m "feat: add terrain feature extraction"
 
 ## Task 9: FEMA claims source
 
+Revised after live API review: see commit message.
+
 **Files:**
 - Create: `migracoast_ml/sources/fema.py`
 - Create: `tests/test_fema.py`
@@ -1587,6 +1589,7 @@ Create `tests/test_fema.py`:
 from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
+import pytest
 
 from migracoast_ml.sources import fema
 
@@ -1641,6 +1644,36 @@ def test_rows_with_missing_coordinates_are_dropped():
         }
     )
     assert int(fema.count_claims_per_cell(claims).claim_count.sum()) == 1
+
+
+def test_page_url_pins_a_stable_sort_order():
+    """Without an explicit order, paging with $skip can silently duplicate or
+    drop rows, and nothing downstream could detect it."""
+    query = parse_qs(urlparse(fema.build_page_url("MA", skip=0)).query)
+    assert query["$orderby"] == ["id"]
+
+
+def test_empty_result_raises_a_clear_error(monkeypatch):
+    class EmptyResponse:
+        text = "latitude,longitude\n"
+
+        def raise_for_status(self):
+            return None
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url, timeout=None):
+            return EmptyResponse()
+
+    monkeypatch.setattr(fema.requests, "Session", Session)
+    monkeypatch.setattr(fema, "RAW_DIR", tmp := fema.RAW_DIR)
+    with pytest.raises(ValueError, match="No claims returned"):
+        fema.fetch_claims(states=("MA",), force=True)
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -1688,9 +1721,13 @@ FEMA_FIELDS = (
 
 def build_page_url(state: str, skip: int) -> str:
     """Compose one page request for a single state."""
+    # $orderby pins a stable sort. Without it, paging with $skip relies on an
+    # undocumented default order, and a shift between requests would duplicate
+    # or drop claims with nothing downstream able to notice.
     query = urlencode(
         {
             "$filter": f"state eq '{state}'",
+            "$orderby": "id",
             "$select": ",".join(FEMA_FIELDS),
             "$top": PAGE_SIZE,
             "$skip": skip,
@@ -1722,6 +1759,9 @@ def fetch_claims(states=STATES, force: bool = False) -> Path:
                     break
                 skip += PAGE_SIZE
 
+    if not frames:
+        raise ValueError(f"No claims returned for states: {tuple(states)}")
+
     atomic_write_csv(pd.concat(frames, ignore_index=True), destination)
     return destination
 
@@ -1742,7 +1782,7 @@ def count_claims_per_cell(claims: pd.DataFrame) -> pd.DataFrame:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_fema.py -v`
-Expected: PASS, 6 passed
+Expected: PASS, 8 passed
 
 - [ ] **Step 5: Commit**
 
