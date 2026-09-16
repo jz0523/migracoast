@@ -33,6 +33,19 @@ class FeatureBuilder:
 
         raw_dir = raw_dir or RAW_DIR
 
+        required = {
+            "elevation": raw_dir / "elevation",
+            "coastline": raw_dir / "ne_10m_coastline.zip",
+            "sea level": raw_dir / "slr_projections.csv",
+            "storm events": raw_dir / "storm_events.csv",
+        }
+        missing = [name for name, path in required.items() if not path.exists()]
+        if missing:
+            raise FileNotFoundError(
+                f"Missing source data for: {', '.join(missing)}. "
+                "Run `python -m migracoast_ml fetch` first."
+            )
+
         elevation = ElevationGrid.from_dir(raw_dir / "elevation")
         coast = CoastlineIndex(boundaries.load_coastline(raw_dir / "ne_10m_coastline.zip"))
         projections = slr_source.parse_projections(

@@ -122,3 +122,9 @@ def test_parity_holds_when_providers_depend_on_their_input(varying_builder):
     for dlat in (-0.04, 0.0, 0.04):
         for dlon in (-0.04, 0.0, 0.04):
             assert varying_builder.build(42.4 + dlat, -71.1 + dlon) == centre
+
+
+def test_load_says_to_fetch_when_data_is_missing(tmp_path):
+    """A fresh clone has no data directory, because it is gitignored."""
+    with pytest.raises(FileNotFoundError, match="migracoast_ml fetch"):
+        FeatureBuilder.load(raw_dir=tmp_path)

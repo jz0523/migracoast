@@ -2335,7 +2335,20 @@ def test_parity_holds_when_providers_depend_on_their_input(varying_builder):
     for dlat in (-0.04, 0.0, 0.04):
         for dlon in (-0.04, 0.0, 0.04):
             assert varying_builder.build(42.4 + dlat, -71.1 + dlon) == centre
+
+
+def test_load_says_to_fetch_when_data_is_missing(tmp_path):
+    """A fresh clone has no data directory, because it is gitignored."""
+    with pytest.raises(FileNotFoundError, match="migracoast_ml fetch"):
+        FeatureBuilder.load(raw_dir=tmp_path)
 ```
+
+Added after review: on a fresh clone, `data/` does not exist because it is
+gitignored, and `FeatureBuilder.load()` used to fail on whichever raw file it
+happened to reach first, e.g. `ValueError: No elevation NetCDF files found in
+...\data\raw\elevation`. That gives no newcomer a clue that they need to run
+`fetch`. `load` now checks for all four required raw sources up front and
+raises `FileNotFoundError` naming what is missing and the command to fix it.
 
 Revised after review: the original parity test could not detect a missing snap.
 The stub providers above (`StubElevation`, `StubCoast`, `StubSeaLevel`,
@@ -2392,6 +2405,19 @@ class FeatureBuilder:
 
         raw_dir = raw_dir or RAW_DIR
 
+        required = {
+            "elevation": raw_dir / "elevation",
+            "coastline": raw_dir / "ne_10m_coastline.zip",
+            "sea level": raw_dir / "slr_projections.csv",
+            "storm events": raw_dir / "storm_events.csv",
+        }
+        missing = [name for name, path in required.items() if not path.exists()]
+        if missing:
+            raise FileNotFoundError(
+                f"Missing source data for: {', '.join(missing)}. "
+                "Run `python -m migracoast_ml fetch` first."
+            )
+
         elevation = ElevationGrid.from_dir(raw_dir / "elevation")
         coast = CoastlineIndex(boundaries.load_coastline(raw_dir / "ne_10m_coastline.zip"))
         projections = slr_source.parse_projections(
@@ -2422,7 +2448,7 @@ class FeatureBuilder:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_builder.py -v`
-Expected: PASS, 7 passed
+Expected: PASS, 8 passed
 
 - [ ] **Step 5: Commit**
 
