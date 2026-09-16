@@ -2254,7 +2254,64 @@ def test_values_flow_through_from_the_providers(builder):
     assert feats["slr_2100_ft"] == pytest.approx(2.59)
     assert feats["storm_events_per_year"] == pytest.approx(0.16)
     assert feats["elev_mean"] == pytest.approx(4.0)
+
+
+class VaryingElevation:
+    """Returns values derived from the coordinates it is given."""
+
+    def features(self, lat, lon, half=0.05):
+        return {
+            "elev_mean": lat + lon,
+            "elev_min": lat,
+            "elev_p10": lon,
+            "frac_below_2m": 0.25,
+            "frac_below_5m": 0.75,
+            "land_fraction": 0.9,
+        }
+
+
+class VaryingCoast:
+    def distance_km(self, lat, lon):
+        return lat * 1000 + lon
+
+
+class VaryingSeaLevel:
+    def features(self, lat, lon):
+        return {"slr_2050_ft": lat, "slr_2100_ft": lon}
+
+
+class VaryingHazards:
+    def features(self, lat, lon):
+        return {"flood_events_per_year": lat - lon, "storm_events_per_year": 0.16}
+
+
+@pytest.fixture
+def varying_builder():
+    return FeatureBuilder(VaryingElevation(), VaryingCoast(), VaryingSeaLevel(), VaryingHazards())
+
+
+def test_parity_holds_when_providers_depend_on_their_input(varying_builder):
+    """The real parity guarantee.
+
+    The other parity test uses constant-returning stubs, so it cannot tell
+    whether build() snapped its input. These providers vary with the
+    coordinates they receive, so this test fails if the snap is removed.
+    """
+    centre = varying_builder.build(42.4, -71.1)
+    for dlat in (-0.04, 0.0, 0.04):
+        for dlon in (-0.04, 0.0, 0.04):
+            assert varying_builder.build(42.4 + dlat, -71.1 + dlon) == centre
 ```
+
+Revised after review: the original parity test could not detect a missing snap.
+The stub providers above (`StubElevation`, `StubCoast`, `StubSeaLevel`,
+`StubHazards`) all return hard-coded constants and ignore their `lat`/`lon`
+arguments, so `test_every_point_inside_a_cell_yields_an_identical_vector`
+compared a constant against itself: deleting the snap from `build` left it
+passing. `VaryingElevation`, `VaryingCoast`, `VaryingSeaLevel` and
+`VaryingHazards` instead return values derived from the coordinates they are
+given, so `test_parity_holds_when_providers_depend_on_their_input` fails if
+`build` stops snapping its input before calling the providers.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -2331,7 +2388,7 @@ class FeatureBuilder:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_builder.py -v`
-Expected: PASS, 6 passed
+Expected: PASS, 7 passed
 
 - [ ] **Step 5: Commit**
 

@@ -75,3 +75,50 @@ def test_values_flow_through_from_the_providers(builder):
     assert feats["slr_2100_ft"] == pytest.approx(2.59)
     assert feats["storm_events_per_year"] == pytest.approx(0.16)
     assert feats["elev_mean"] == pytest.approx(4.0)
+
+
+class VaryingElevation:
+    """Returns values derived from the coordinates it is given."""
+
+    def features(self, lat, lon, half=0.05):
+        return {
+            "elev_mean": lat + lon,
+            "elev_min": lat,
+            "elev_p10": lon,
+            "frac_below_2m": 0.25,
+            "frac_below_5m": 0.75,
+            "land_fraction": 0.9,
+        }
+
+
+class VaryingCoast:
+    def distance_km(self, lat, lon):
+        return lat * 1000 + lon
+
+
+class VaryingSeaLevel:
+    def features(self, lat, lon):
+        return {"slr_2050_ft": lat, "slr_2100_ft": lon}
+
+
+class VaryingHazards:
+    def features(self, lat, lon):
+        return {"flood_events_per_year": lat - lon, "storm_events_per_year": 0.16}
+
+
+@pytest.fixture
+def varying_builder():
+    return FeatureBuilder(VaryingElevation(), VaryingCoast(), VaryingSeaLevel(), VaryingHazards())
+
+
+def test_parity_holds_when_providers_depend_on_their_input(varying_builder):
+    """The real parity guarantee.
+
+    The other parity test uses constant-returning stubs, so it cannot tell
+    whether build() snapped its input. These providers vary with the
+    coordinates they receive, so this test fails if the snap is removed.
+    """
+    centre = varying_builder.build(42.4, -71.1)
+    for dlat in (-0.04, 0.0, 0.04):
+        for dlon in (-0.04, 0.0, 0.04):
+            assert varying_builder.build(42.4 + dlat, -71.1 + dlon) == centre
