@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 import pandas as pd
 import requests
 
-from migracoast_ml.config import RAW_DIR, STATES, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, STATES, ensure_dirs
 from migracoast_ml.features.grid import snap_to_cell
 from migracoast_ml.sources._io import atomic_write_csv
 
@@ -61,7 +61,9 @@ def fetch_claims(states=STATES, force: bool = False) -> Path:
         for state in states:
             skip = 0
             while True:
-                response = session.get(build_page_url(state, skip), timeout=300)
+                response = session.get(
+                    build_page_url(state, skip), timeout=300, headers=HTTP_HEADERS
+                )
                 response.raise_for_status()
                 page = pd.read_csv(io.StringIO(response.text), low_memory=False)
                 if page.empty:

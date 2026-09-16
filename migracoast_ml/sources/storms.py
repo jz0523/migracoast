@@ -10,6 +10,7 @@ import requests
 
 from migracoast_ml.config import (
     FLOOD_EVENT_TYPES,
+    HTTP_HEADERS,
     RAW_DIR,
     STORM_EVENT_TYPES,
     STORM_YEARS,
@@ -53,7 +54,9 @@ def fetch_storms(years=STORM_YEARS, force: bool = False) -> Path:
     if destination.exists() and not force:
         return destination
 
-    index = parse_index(requests.get(STORM_INDEX_URL, timeout=180).text)
+    index = parse_index(
+        requests.get(STORM_INDEX_URL, timeout=180, headers=HTTP_HEADERS).text
+    )
 
     # A year silently missing from the listing would shrink the event count
     # while HazardIndex still divides by the full span, understating rates.
@@ -65,7 +68,9 @@ def fetch_storms(years=STORM_YEARS, force: bool = False) -> Path:
     with requests.Session() as session:
         for year in years:
             filename = index[year]
-            response = session.get(STORM_INDEX_URL + filename, timeout=300)
+            response = session.get(
+                STORM_INDEX_URL + filename, timeout=300, headers=HTTP_HEADERS
+            )
             response.raise_for_status()
             text = gzip.decompress(response.content).decode("utf-8", "replace")
             frame = pd.read_csv(io.StringIO(text), low_memory=False)

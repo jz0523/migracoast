@@ -79,7 +79,7 @@ def test_empty_result_raises_a_clear_error(monkeypatch):
         def __exit__(self, *exc):
             return False
 
-        def get(self, url, timeout=None):
+        def get(self, url, timeout=None, headers=None):
             return EmptyResponse()
 
     monkeypatch.setattr(fema.requests, "Session", Session)

@@ -27,6 +27,10 @@ SLR_SCENARIO = "1.0 - MED"
 
 STORM_YEARS = tuple(range(2000, 2025))
 
+# NOAA's servers reject the default python-requests user agent with HTTP 403,
+# so every fetcher identifies itself explicitly.
+HTTP_HEADERS = {"User-Agent": "migracoast-ml/0.1 (+https://github.com/jz0523/migracoast)"}
+
 FLOOD_EVENT_TYPES = ("Flood", "Flash Flood", "Coastal Flood")
 STORM_EVENT_TYPES = ("Thunderstorm Wind", "Tornado", "Hail", "Hurricane")
 

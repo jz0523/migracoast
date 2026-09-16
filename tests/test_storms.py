@@ -73,10 +73,12 @@ def test_a_missing_year_fails_loudly(monkeypatch):
         def __exit__(self, *exc):
             return False
 
-        def get(self, url, timeout=None):
+        def get(self, url, timeout=None, headers=None):
             raise AssertionError("fetch_storms must not download when a year is missing")
 
-    monkeypatch.setattr(storms.requests, "get", lambda url, timeout=None: Response())
+    monkeypatch.setattr(
+        storms.requests, "get", lambda url, timeout=None, headers=None: Response()
+    )
     monkeypatch.setattr(storms.requests, "Session", Session)
 
     with pytest.raises(ValueError, match="2001"):

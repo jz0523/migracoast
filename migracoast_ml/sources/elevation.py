@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from migracoast_ml.config import RAW_DIR, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, ensure_dirs
 from migracoast_ml.sources._io import atomic_write_bytes
 
 # Only the 30 arc-second dataset works; the 60 arc-second one returns HTTP 500.
@@ -62,7 +62,9 @@ def fetch_elevation(states_gdf, force: bool = False) -> list[Path]:
             written.append(destination)
             continue
         south, north, west, east = pad_bounds(row.geometry.bounds)
-        response = requests.get(build_url(south, north, west, east), timeout=600)
+        response = requests.get(
+            build_url(south, north, west, east), timeout=600, headers=HTTP_HEADERS
+        )
         response.raise_for_status()
         atomic_write_bytes(destination, response.content)
         written.append(destination)

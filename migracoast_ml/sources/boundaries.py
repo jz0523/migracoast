@@ -5,7 +5,7 @@ from pathlib import Path
 import geopandas as gpd
 import requests
 
-from migracoast_ml.config import RAW_DIR, STATES, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, STATES, ensure_dirs
 from migracoast_ml.sources._io import atomic_write_bytes
 
 STATES_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip"
@@ -16,7 +16,7 @@ def _download(url: str, destination: Path, force: bool = False) -> Path:
     if destination.exists() and not force:
         return destination
     ensure_dirs()
-    response = requests.get(url, timeout=180, allow_redirects=True)
+    response = requests.get(url, timeout=180, allow_redirects=True, headers=HTTP_HEADERS)
     response.raise_for_status()
     return atomic_write_bytes(destination, response.content)
 

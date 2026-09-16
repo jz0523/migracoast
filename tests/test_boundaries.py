@@ -43,3 +43,23 @@ def test_clip_coastline_drops_geometries_outside_the_region():
     )
     out = boundaries.clip_coastline(coast, bounds=(-1, -1, 2, 2))
     assert len(out) == 1
+
+
+def test_downloads_identify_the_client(monkeypatch, tmp_path):
+    """NOAA rejects the default python-requests user agent with HTTP 403."""
+    seen = {}
+
+    class Response:
+        content = b"payload"
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, timeout=None, allow_redirects=None, headers=None):
+        seen["headers"] = headers
+        return Response()
+
+    monkeypatch.setattr(boundaries.requests, "get", fake_get)
+    boundaries._download("https://example.invalid/x.zip", tmp_path / "x.zip", force=True)
+    assert "User-Agent" in seen["headers"]
+    assert "python-requests" not in seen["headers"]["User-Agent"]

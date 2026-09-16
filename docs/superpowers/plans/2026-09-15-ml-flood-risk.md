@@ -256,6 +256,10 @@ SLR_SCENARIO = "1.0 - MED"
 
 STORM_YEARS = tuple(range(2000, 2025))
 
+# NOAA's servers reject the default python-requests user agent with HTTP 403,
+# so every fetcher identifies itself explicitly.
+HTTP_HEADERS = {"User-Agent": "migracoast-ml/0.1 (+https://github.com/jz0523/migracoast)"}
+
 FLOOD_EVENT_TYPES = ("Flood", "Flash Flood", "Coastal Flood")
 STORM_EVENT_TYPES = ("Thunderstorm Wind", "Tornado", "Hail", "Hurricane")
 
@@ -478,6 +482,26 @@ def test_clip_coastline_drops_geometries_outside_the_region():
     )
     out = boundaries.clip_coastline(coast, bounds=(-1, -1, 2, 2))
     assert len(out) == 1
+
+
+def test_downloads_identify_the_client(monkeypatch, tmp_path):
+    """NOAA rejects the default python-requests user agent with HTTP 403."""
+    seen = {}
+
+    class Response:
+        content = b"payload"
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, timeout=None, allow_redirects=None, headers=None):
+        seen["headers"] = headers
+        return Response()
+
+    monkeypatch.setattr(boundaries.requests, "get", fake_get)
+    boundaries._download("https://example.invalid/x.zip", tmp_path / "x.zip", force=True)
+    assert "User-Agent" in seen["headers"]
+    assert "python-requests" not in seen["headers"]["User-Agent"]
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -497,7 +521,7 @@ from pathlib import Path
 import geopandas as gpd
 import requests
 
-from migracoast_ml.config import RAW_DIR, STATES, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, STATES, ensure_dirs
 
 STATES_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip"
 COAST_URL = "https://naciscdn.org/naturalearth/10m/physical/ne_10m_coastline.zip"
@@ -507,7 +531,7 @@ def _download(url: str, destination: Path, force: bool = False) -> Path:
     if destination.exists() and not force:
         return destination
     ensure_dirs()
-    response = requests.get(url, timeout=180, allow_redirects=True)
+    response = requests.get(url, timeout=180, allow_redirects=True, headers=HTTP_HEADERS)
     response.raise_for_status()
     destination.write_bytes(response.content)
     return destination
@@ -550,7 +574,7 @@ def load_coastline(path: Path | None = None, bounds=None):
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_boundaries.py -v`
-Expected: PASS, 4 passed
+Expected: PASS, 5 passed
 
 - [ ] **Step 5: Commit**
 
@@ -839,7 +863,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from migracoast_ml.config import RAW_DIR, SLR_SCENARIO, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, SLR_SCENARIO, ensure_dirs
 from migracoast_ml.sources._io import atomic_write_bytes
 
 SLR_URL = "https://oceanservice.noaa.gov/hazards/sealevelrise/Sea_Level_Rise_Datasets_2022.zip"
@@ -856,7 +880,7 @@ def fetch_sealevel(force: bool = False) -> Path:
     if destination.exists() and not force:
         return destination
     ensure_dirs()
-    response = requests.get(SLR_URL, timeout=180, allow_redirects=True)
+    response = requests.get(SLR_URL, timeout=180, allow_redirects=True, headers=HTTP_HEADERS)
     response.raise_for_status()
     return atomic_write_bytes(destination, response.content)
 
@@ -1246,7 +1270,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from migracoast_ml.config import RAW_DIR, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, ensure_dirs
 from migracoast_ml.sources._io import atomic_write_bytes
 
 # Only the 30 arc-second dataset works; the 60 arc-second one returns HTTP 500.
@@ -1299,7 +1323,9 @@ def fetch_elevation(states_gdf, force: bool = False) -> list[Path]:
             written.append(destination)
             continue
         south, north, west, east = pad_bounds(row.geometry.bounds)
-        response = requests.get(build_url(south, north, west, east), timeout=600)
+        response = requests.get(
+            build_url(south, north, west, east), timeout=600, headers=HTTP_HEADERS
+        )
         response.raise_for_status()
         atomic_write_bytes(destination, response.content)
         written.append(destination)
@@ -1695,7 +1721,7 @@ from urllib.parse import urlencode
 import pandas as pd
 import requests
 
-from migracoast_ml.config import RAW_DIR, STATES, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, STATES, ensure_dirs
 from migracoast_ml.features.grid import snap_to_cell
 from migracoast_ml.sources._io import atomic_write_csv
 
@@ -1749,7 +1775,9 @@ def fetch_claims(states=STATES, force: bool = False) -> Path:
         for state in states:
             skip = 0
             while True:
-                response = session.get(build_page_url(state, skip), timeout=300)
+                response = session.get(
+                    build_page_url(state, skip), timeout=300, headers=HTTP_HEADERS
+                )
                 response.raise_for_status()
                 page = pd.read_csv(io.StringIO(response.text), low_memory=False)
                 if page.empty:
@@ -1933,6 +1961,7 @@ import requests
 
 from migracoast_ml.config import (
     FLOOD_EVENT_TYPES,
+    HTTP_HEADERS,
     RAW_DIR,
     STORM_EVENT_TYPES,
     STORM_YEARS,
@@ -1976,7 +2005,9 @@ def fetch_storms(years=STORM_YEARS, force: bool = False) -> Path:
     if destination.exists() and not force:
         return destination
 
-    index = parse_index(requests.get(STORM_INDEX_URL, timeout=180).text)
+    index = parse_index(
+        requests.get(STORM_INDEX_URL, timeout=180, headers=HTTP_HEADERS).text
+    )
 
     # A year silently missing from the listing would shrink the event count
     # while HazardIndex still divides by the full span, understating rates.
@@ -1988,7 +2019,9 @@ def fetch_storms(years=STORM_YEARS, force: bool = False) -> Path:
     with requests.Session() as session:
         for year in years:
             filename = index[year]
-            response = session.get(STORM_INDEX_URL + filename, timeout=300)
+            response = session.get(
+                STORM_INDEX_URL + filename, timeout=300, headers=HTTP_HEADERS
+            )
             response.raise_for_status()
             text = gzip.decompress(response.content).decode("utf-8", "replace")
             frame = pd.read_csv(io.StringIO(text), low_memory=False)

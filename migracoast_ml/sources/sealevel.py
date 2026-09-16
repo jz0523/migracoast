@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from migracoast_ml.config import RAW_DIR, SLR_SCENARIO, ensure_dirs
+from migracoast_ml.config import HTTP_HEADERS, RAW_DIR, SLR_SCENARIO, ensure_dirs
 from migracoast_ml.sources._io import atomic_write_bytes
 
 SLR_URL = "https://oceanservice.noaa.gov/hazards/sealevelrise/Sea_Level_Rise_Datasets_2022.zip"
@@ -23,7 +23,7 @@ def fetch_sealevel(force: bool = False) -> Path:
     if destination.exists() and not force:
         return destination
     ensure_dirs()
-    response = requests.get(SLR_URL, timeout=180, allow_redirects=True)
+    response = requests.get(SLR_URL, timeout=180, allow_redirects=True, headers=HTTP_HEADERS)
     response.raise_for_status()
     return atomic_write_bytes(destination, response.content)
 
