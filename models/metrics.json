@@ -1,0 +1,62 @@
+{
+  "winner": "gradient_boosting",
+  "trained_on": "2026-09-15",
+  "n_cells": 8494,
+  "n_coastal_cells": 1309,
+  "states": [
+    "MA",
+    "NY",
+    "PA",
+    "FL",
+    "CA"
+  ],
+  "scenario": "1.0 - MED",
+  "feature_names": [
+    "elev_mean",
+    "elev_min",
+    "elev_p10",
+    "frac_below_2m",
+    "frac_below_5m",
+    "land_fraction",
+    "coast_km",
+    "slr_2050_ft",
+    "slr_2100_ft",
+    "flood_events_per_year",
+    "storm_events_per_year"
+  ],
+  "metrics": [
+    {
+      "model": "ridge",
+      "rmse_mean": 1.3961123892176994,
+      "rmse_std": 0.14564514479697918,
+      "r2_mean": 0.43553705528029063,
+      "r2_std": 0.06188176106236703,
+      "spearman_mean": 0.6664098679972705,
+      "coastal_rmse_mean": 2.088819410336351,
+      "coastal_rmse_std": 0.18893530347322934,
+      "coastal_spearman_mean": 0.6284256971960404
+    },
+    {
+      "model": "gradient_boosting",
+      "rmse_mean": 1.1024602016207574,
+      "rmse_std": 0.05085169188291144,
+      "r2_mean": 0.6461885061250439,
+      "r2_std": 0.026583980029980556,
+      "spearman_mean": 0.7599889901609209,
+      "coastal_rmse_mean": 1.5304852815015635,
+      "coastal_rmse_std": 0.08655955725509394,
+      "coastal_spearman_mean": 0.7953911689145142
+    },
+    {
+      "model": "neural_net",
+      "rmse_mean": 1.140951657042474,
+      "rmse_std": 0.060117716392401634,
+      "r2_mean": 0.6207937797022269,
+      "r2_std": 0.0349714866960695,
+      "spearman_mean": 0.7484219060835697,
+      "coastal_rmse_mean": 1.5871695782977269,
+      "coastal_rmse_std": 0.11758960290486327,
+      "coastal_spearman_mean": 0.7853491440023572
+    }
+  ]
+}
