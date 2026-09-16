@@ -26,12 +26,16 @@ import statistics
 import mysql.connector
 from datetime import datetime
 
-# Database connection details
+# Database connection details, read from the environment.
+# The previous hardcoded password is in this repository's git history
+# and must be rotated on the database server.
+import os
+
 db_config = {
-    'host': '127.0.0.1',
-    'user': 'migracoast',
-    'password': 'St5SfZXpxRPS4XZy',
-    'database': 'migracoast'
+    'host': os.environ.get('MIGRACOAST_DB_HOST', '127.0.0.1'),
+    'user': os.environ.get('MIGRACOAST_DB_USER', 'migracoast'),
+    'password': os.environ.get('MIGRACOAST_DB_PASSWORD', ''),
+    'database': os.environ.get('MIGRACOAST_DB_NAME', 'migracoast'),
 }
 
 # In[6]:
@@ -904,6 +908,22 @@ def analyze():
     insert_data(response)
     
     return jsonify(response)
+
+# Optional: expose the learned risk model alongside the rule engine.
+# The import is guarded because the ML package may not be installed, and
+# because app.py itself cannot start without its raster data files.
+try:
+    from migracoast_ml.api import create_blueprint as _create_ml_blueprint
+    from migracoast_ml.features.builder import FeatureBuilder as _FeatureBuilder
+    from migracoast_ml.models.scoring import RiskScorer as _RiskScorer
+    from migracoast_ml.models.train import MODEL_PATH as _MODEL_PATH
+
+    app.register_blueprint(
+        _create_ml_blueprint(_RiskScorer.load(_MODEL_PATH), _FeatureBuilder.load())
+    )
+    print("Registered the ML blueprint at /ml")
+except Exception as _ml_error:  # pragma: no cover - depends on local data
+    print(f"ML blueprint not registered: {_ml_error}")
 
 if __name__ == '__main__':
     app.run(debug=False)
