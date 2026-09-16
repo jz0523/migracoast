@@ -162,8 +162,23 @@ correlation from it.
 10. **The raw FEMA claims export contains 57,363 duplicate rows** and no
     unique claim identifier to de-duplicate against, so aggregated cell
     counts include them.
+11. **The risk percentile is ranked against the 1,309 coastal cells only**,
+    not all 8,494. That is deliberate, since ranking against inland zeros
+    would push every coastal answer to the top of the scale, but it is why
+    an inland location can still score in the 80s.
+12. **About 1% of cells, 82 of them, have no land pixels at all** and carry
+    no terrain values. The model imputes them at both training and serving
+    time.
+13. **The API will score any coordinate on earth**, including far outside
+    the five states it was trained on, and returns a confident percentile
+    with no out-of-domain warning.
 
 ### Usage
+
+Requires Python 3.10 or newer, since the code uses modern type syntax.
+`requirements.txt` covers the `migracoast_ml` package only. The original
+`app.py` additionally needs `mysql-connector-python`, `rasterio`, and
+`geopy`, which are not included there.
 
 ```bash
 python -m venv .venv
@@ -177,9 +192,11 @@ python -m venv .venv
 .venv/Scripts/python.exe -m migracoast_ml serve      # run the API
 ```
 
-The trained model is committed under `models/`, so `serve` works immediately
-after cloning without running `fetch`, `build`, or `train` first. Only re-run
-those to rebuild from scratch.
+The trained model and its metrics are committed under `models/`, so a fresh
+clone can run `evaluate` immediately, since it only reads
+`models/metrics.json`. `serve`, `build`, `baseline`, and
+`notebooks/results.ipynb` all need the downloaded source data first, which is
+gitignored and not committed, so run `fetch` before any of them.
 
 ### API
 
@@ -188,6 +205,7 @@ those to rebuild from scratch.
 | `/ml/risk` | POST | Score one coordinate |
 | `/ml/heatmap` | POST | Score a grid, capped at 2500 cells per request |
 | `/ml/model-info` | GET | Model name, metrics, feature list |
+| `/health` | GET | Liveness check, served by the standalone server |
 
 A single `/ml/risk` point query takes about 120 ms. The server itself takes
 about 8 seconds to start, since it loads the trained model and four feature
