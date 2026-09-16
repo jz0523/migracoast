@@ -4181,7 +4181,7 @@ Replace lines 29 to 35 of `app.py`. The current block is:
 db_config = {
     'host': '127.0.0.1',
     'user': 'migracoast',
-    'password': 'St5SfZXpxRPS4XZy',
+    'password': '<redacted, see git history>',
     'database': 'migracoast'
 }
 ```
