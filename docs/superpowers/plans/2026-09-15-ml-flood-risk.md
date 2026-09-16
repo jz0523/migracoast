@@ -2708,7 +2708,38 @@ def test_assemble_preserves_every_feature_column():
 def test_coastal_mask_uses_the_configured_threshold():
     frame = pd.DataFrame({"coast_km": [5.0, 29.9, 30.1, 500.0]})
     assert list(coastal_mask(frame)) == [True, True, False, False]
+
+
+def test_each_cell_keeps_its_own_features():
+    """Features are attached positionally. If the order slipped, every cell
+    would carry another cell's data and nothing else would notice."""
+    cells = pd.DataFrame(
+        {
+            "cell_lat": [42.4, 25.8, 40.8],
+            "cell_lon": [-71.1, -80.1, -77.8],
+            "state": ["MA", "FL", "PA"],
+        }
+    )
+    counts = pd.DataFrame(columns=["cell_lat", "cell_lon", "claim_count"])
+    # Each row's features are derived from its own latitude, so a shifted or
+    # reversed join shows up immediately.
+    features = pd.DataFrame(
+        {name: [lat * 100 + i for lat in cells["cell_lat"]] for i, name in enumerate(FEATURE_NAMES)}
+    )
+
+    out = assemble(cells, counts, features)
+
+    for i, name in enumerate(FEATURE_NAMES):
+        assert list(out[name]) == [42.4 * 100 + i, 25.8 * 100 + i, 40.8 * 100 + i]
 ```
+
+Added after review: the original test suite gave every row identical feature
+values, so a positional misalignment in `assemble` (features attached to the
+wrong cell, e.g. via a reversed or shifted array) was invisible to every
+existing test. This test derives each row's features from its own latitude,
+so a shifted or reversed join fails immediately. Confirmed by mutation: with
+`out[name] = features[name].to_numpy()[::-1]` in place of the correct
+assignment, this test fails while the other five still pass.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -2795,7 +2826,7 @@ def load_training_table(path=None) -> pd.DataFrame:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_dataset.py -v`
-Expected: PASS, 5 passed
+Expected: PASS, 6 passed
 
 - [ ] **Step 5: Build the real training table**
 

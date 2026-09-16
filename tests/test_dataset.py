@@ -46,3 +46,26 @@ def test_assemble_preserves_every_feature_column():
 def test_coastal_mask_uses_the_configured_threshold():
     frame = pd.DataFrame({"coast_km": [5.0, 29.9, 30.1, 500.0]})
     assert list(coastal_mask(frame)) == [True, True, False, False]
+
+
+def test_each_cell_keeps_its_own_features():
+    """Features are attached positionally. If the order slipped, every cell
+    would carry another cell's data and nothing else would notice."""
+    cells = pd.DataFrame(
+        {
+            "cell_lat": [42.4, 25.8, 40.8],
+            "cell_lon": [-71.1, -80.1, -77.8],
+            "state": ["MA", "FL", "PA"],
+        }
+    )
+    counts = pd.DataFrame(columns=["cell_lat", "cell_lon", "claim_count"])
+    # Each row's features are derived from its own latitude, so a shifted or
+    # reversed join shows up immediately.
+    features = pd.DataFrame(
+        {name: [lat * 100 + i for lat in cells["cell_lat"]] for i, name in enumerate(FEATURE_NAMES)}
+    )
+
+    out = assemble(cells, counts, features)
+
+    for i, name in enumerate(FEATURE_NAMES):
+        assert list(out[name]) == [42.4 * 100 + i, 25.8 * 100 + i, 40.8 * 100 + i]
