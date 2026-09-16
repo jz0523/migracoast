@@ -152,6 +152,7 @@ pandas==3.0.5
 scipy==1.18.1
 scikit-learn==1.9.1
 joblib==1.6.0
+pyarrow==25.0.1
 geopandas==1.1.4
 shapely==2.1.2
 pyogrio==0.13.0
@@ -2802,7 +2803,8 @@ Run: `.venv/Scripts/python.exe -m migracoast_ml build`
 
 Expected: a line reading `Wrote N cells` where N is in the low thousands to
 roughly fifteen thousand. This step takes a few minutes because it computes
-coastline distance for every cell.
+coastline distance for every cell. The training table is stored as parquet,
+so this step requires the `pyarrow` engine from `requirements.txt`.
 
 - [ ] **Step 6: Sanity check the table**
 
